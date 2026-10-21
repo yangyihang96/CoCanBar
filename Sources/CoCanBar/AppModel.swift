@@ -7,16 +7,11 @@ import CoCanStyle
 
 let appLog = Logger(subsystem: "com.local.CoCanBar", category: "app")
 
-/// 一台设备的配置（存 UserDefaults，不含任何密钥）。
-struct DeviceConfig: Codable, Identifiable, Hashable, Sendable {
-    var psn: String
-    var name: String
-    /// 手动指定的主机名或 IP；为空时用 `cp02-<PSN>.local`。
-    var hostOverride: String?
-    /// 上次由本 app 设置的充电策略（MCP 不提供读取当前策略）。
-    var lastStrategy: Int?
+/// 一台设备的配置（存 UserDefaults，不含任何密钥）。身份和存盘格式在 `SavedDevice`。
+typealias DeviceConfig = SavedDevice
 
-    var id: String { psn }
+extension DeviceConfig {
+    /// 小电拼没填主机时用 `cp02-<PSN>.local`。别的驱动以后用自己的默认主机。
     var defaultHost: String { "cp02-\(psn).local" }
 
     var effectiveHost: String {
@@ -248,8 +243,9 @@ final class AppModel {
     }
 
     func refresh(_ psn: String, cloudNow: Bool = false) async {
-        // 每次都取最新配置，不用调用方手里的旧副本
+        // 每次都取最新配置，不用调用方手里的旧副本。调用方可以传裸 PSN 或 `candysign:<PSN>`。
         guard let device = device(psn) else { return }
+        let psn = device.psn
         refreshCounter += 1
         let ticket = refreshCounter
         var state = runtime[psn] ?? DeviceRuntime()
@@ -398,11 +394,13 @@ final class AppModel {
     // 控制函数返回失败原因，nil 表示成功（快捷指令要用）；界面上的提示照常显示。
 
     @discardableResult
-    func setPort(psn: String, index: Int, on: Bool) async -> String? {
+    func setPort(psn requested: String, index: Int, on: Bool) async -> String? {
+        let psn = canonical(requested)
+        if refuse(psn, .portPower) != nil { return "这台设备不支持这项操作" }
         let name = PortNaming.name(index: index)
         let error = await run(psn, busy: on ? "正在打开 \(name)…" : "正在关闭 \(name)…",
                               success: on ? "已打开 \(name)" : "已关闭 \(name)") {
-            try await $0.setPorts([index + 1], on: on)
+            try await Self.send(.setPort(index: index, on: on), psn: psn, client: $0)
         }
         if error == nil { mutate(psn) { $0.portCommands[index] = PortCommand(on: on, at: Date()) } }
         await refresh(psn, cloudNow: true)
@@ -410,25 +408,31 @@ final class AppModel {
     }
 
     @discardableResult
-    func setStrategy(psn: String, _ strategy: ChargingStrategy) async -> String? {
+    func setStrategy(psn requested: String, _ strategy: ChargingStrategy) async -> String? {
+        let psn = canonical(requested)
+        if refuse(psn, .chargingStrategy) != nil { return "这台设备不支持这项操作" }
         let error = await run(psn, busy: "正在切换到「\(strategy.title)」…", success: "已切换到「\(strategy.title)」") {
-            try await $0.setStrategy(strategy)
+            try await Self.send(.setStrategy(strategy), psn: psn, client: $0)
         }
         if error == nil { updateDevice(psn) { $0.lastStrategy = strategy.rawValue } }
         return error
     }
 
     @discardableResult
-    func setTemperature(psn: String, _ mode: TemperatureMode) async -> String? {
-        await setControl(psn, \.temperature, mode, busy: "正在设置温控…", success: "温控已设为\(mode.title)") {
-            try await $0.setTemperatureMode(mode)
+    func setTemperature(psn requested: String, _ mode: TemperatureMode) async -> String? {
+        let psn = canonical(requested)
+        if refuse(psn, .temperatureMode) != nil { return "这台设备不支持这项操作" }
+        return await setControl(psn, \.temperature, mode, busy: "正在设置温控…", success: "温控已设为\(mode.title)") {
+            try await Self.send(.setTemperature(mode), psn: psn, client: $0)
         }
     }
 
     @discardableResult
-    func setDisplay(psn: String, _ level: DisplayLevel) async -> String? {
-        await setControl(psn, \.display, level, busy: "正在设置屏幕亮度…", success: "屏幕亮度已设为「\(level.rawValue)」") {
-            try await $0.setDisplayLevel(level)
+    func setDisplay(psn requested: String, _ level: DisplayLevel) async -> String? {
+        let psn = canonical(requested)
+        if refuse(psn, .displaySettings) != nil { return "这台设备不支持这项操作" }
+        return await setControl(psn, \.display, level, busy: "正在设置屏幕亮度…", success: "屏幕亮度已设为「\(level.rawValue)」") {
+            try await Self.send(.setDisplay(level), psn: psn, client: $0)
         }
     }
 
@@ -451,7 +455,10 @@ final class AppModel {
 
     /// 读取温控模式和屏幕亮度（MCP 有对应的 get 工具），60 秒内不重复读。
     /// 面板每次打开都会自动调用，所以失败只记在控制菜单里，不在卡片上弹错误。
-    func loadControls(psn: String, force: Bool = false) async {
+    func loadControls(psn requested: String, force: Bool = false) async {
+        let psn = canonical(requested)
+        let caps = capabilities(for: psn)
+        guard caps.contains(.temperatureMode) || caps.contains(.displaySettings) || caps.contains(.powerAllocation) else { return }
         guard !isSnapshot, mcpConfigured.contains(psn) else { return }
         if !force, let loaded = runtime[psn]?.control.loadedAt, Date().timeIntervalSince(loaded) < 60 { return }
         loadCounter += 1
@@ -502,8 +509,10 @@ final class AppModel {
     /// 识别各口接的设备（MCP `get_port_pd_status` + `get_port_details`）。
     /// 面板或设置页开着时每隔几秒调一次，这里决定要不要真的去读：插拔或重新握手后（离上次读至少 5 秒）读一次，
     /// 20 秒后再补读一次，平时每分钟更新一次电量。没接设备时不问云端。`force` 跳过这些间隔（手动刷新）。
-    func loadIdentities(psn: String, force: Bool = false) async {
-        guard !isSnapshot, mcpConfigured.contains(psn), isOnline(psn),
+    func loadIdentities(psn requested: String, force: Bool = false) async {
+        let psn = canonical(requested)
+        guard capabilities(for: psn).contains(.portIdentity),
+              !isSnapshot, mcpConfigured.contains(psn), isOnline(psn),
               let ports = runtime[psn]?.metrics?.ports else { return }
         let state = runtime[psn]?.identity ?? IdentityState()
         guard !state.loading else { return }
@@ -717,51 +726,61 @@ final class AppModel {
     }
 
     /// 临时的端口功率分配，按端口顺序 A、C1…C4（W），0 表示按策略默认。先在本地检查范围再发送。
-    func setPowerAllocation(psn: String, _ watts: [Int]) async {
+    func setPowerAllocation(psn requested: String, _ watts: [Int]) async {
+        let psn = canonical(requested)
+        if refuse(psn, .powerAllocation) != nil { return }
         if let problem = facts(psn).problem(with: watts) {
             showMessage(psn, problem, isError: true)
             return
         }
         await run(psn, busy: "正在应用功率分配…", success: "已应用功率分配，插拔设备或开关端口后会回到策略分配") {
-            try await $0.setPowerAllocation(watts)
+            try await Self.send(.setPowerAllocation(watts), psn: psn, client: $0)
         }
         await refresh(psn)
     }
 
-    func setStatusDisplayMode(psn: String, _ mode: StatusDisplayMode) async {
+    func setStatusDisplayMode(psn requested: String, _ mode: StatusDisplayMode) async {
+        let psn = canonical(requested)
+        if refuse(psn, .displaySettings) != nil { return }
         await setControl(psn, \.statusMode, mode, busy: "正在设置屏显模式…", success: "屏显模式已设为「\(mode.rawValue)」") {
-            try await $0.setStatusDisplayMode(mode)
+            try await Self.send(.setStatusDisplayMode(mode), psn: psn, client: $0)
         }
     }
 
-    func setIdleDisplay(psn: String, _ display: IdleDisplay) async {
+    func setIdleDisplay(psn requested: String, _ display: IdleDisplay) async {
+        let psn = canonical(requested)
+        if refuse(psn, .displaySettings) != nil { return }
         await setControl(psn, \.idleDisplay, display, busy: "正在设置待机显示…", success: "待机显示已设为「\(display.rawValue)」") {
-            try await $0.setIdleDisplay(display)
+            try await Self.send(.setIdleDisplay(display), psn: psn, client: $0)
         }
     }
 
-    func setHourlyChime(psn: String, _ enabled: Bool) async {
+    func setHourlyChime(psn requested: String, _ enabled: Bool) async {
+        let psn = canonical(requested)
+        if refuse(psn, .displaySettings) != nil { return }
         await setControl(psn, \.hourlyChime, enabled, busy: enabled ? "正在打开整点报时…" : "正在关闭整点报时…",
                          success: enabled ? "已打开整点报时" : "已关闭整点报时") {
-            try await $0.setHourlyChime(enabled)
+            try await Self.send(.setHourlyChime(enabled), psn: psn, client: $0)
         }
     }
 
     /// 从面板跳到设置窗口的「调节」页，并选中这台设备。
     func showControls(for psn: String) {
-        settingsDevice = psn
+        settingsDevice = canonical(psn)
         settingsTab = .controls
     }
 
     /// 用户点了别的端口时收起提示，让详情条显示刚点的内容。
-    func clearMessage(_ psn: String) {
+    func clearMessage(_ requested: String) {
+        let psn = canonical(requested)
         currentMessage[psn] = nil
         guard runtime[psn]?.message != nil else { return }
         mutate(psn) { $0.message = nil }
     }
 
     /// 握手并列出工具，用于设置页的“测试连接”。
-    func testMCP(psn: String) async -> Result<Int, Error> {
+    func testMCP(psn requested: String) async -> Result<Int, Error> {
+        let psn = canonical(requested)
         do {
             let client = try client(for: psn)
             await client.reset()
@@ -806,12 +825,53 @@ final class AppModel {
     private func client(for psn: String) throws -> MCPClient {
         // 演示数据模型不读钥匙串
         guard !isSnapshot else { throw AppError.noMCP }
-        if let client = clients[psn] { return client }
-        guard let raw = try keychain.read(account: psn) else { throw AppError.noMCP }
-        guard let endpoint = MCPEndpoint(string: raw), endpoint.psn == psn else { throw AppError.mcpMismatch }
+        let id = device(psn)?.chargerID ?? ChargerID(storedKey: psn)
+        let account = id.legacyStorageKey
+        if let client = clients[account] { return client }
+        // 旧安装的钥匙串项用裸 PSN。没有时再看 `candysign:<PSN>`，不把现有项搬到新键（搬家会再弹一次授权）。
+        guard let raw = try keychain.read(charger: id) else { throw AppError.noMCP }
+        guard let endpoint = MCPEndpoint(string: raw), endpoint.psn == id.localID else { throw AppError.mcpMismatch }
         let client = MCPClient(endpoint: endpoint, clientVersion: Self.appVersion)
-        clients[psn] = client
+        clients[account] = client
         return client
+    }
+
+    /// 裸 PSN 和 `candysign:<PSN>` 都落到存盘用的键。找不到设备时原样返回，和以前的失败路径一样。
+    private func canonical(_ key: String) -> String {
+        device(key)?.psn ?? key
+    }
+
+    func capabilities(for key: String) -> ChargerCapabilities {
+        let id = device(key)?.chargerID ?? ChargerID(storedKey: key)
+        return ChargerDrivers.driver(for: id)?.capabilities ?? []
+    }
+
+    /// 驱动没有这项能力时不发命令。小电拼的能力是满的，这里不会拦住。
+    private func refuse(_ psn: String, _ capability: ChargerCapabilities) -> String? {
+        guard capabilities(for: psn).contains(capability) else {
+            let text = ChargerDriverError.unsupported.localizedDescription
+            showMessage(psn, text, isError: true)
+            return text
+        }
+        return nil
+    }
+
+    /// 经小电拼驱动的短会话发一条命令：打开、调用、关掉。HTTP 没有要断开的连接。
+    /// `psn` 是存盘键（裸 PSN 或带前缀的编号），不碰界面状态，所以不用主线程。
+    private nonisolated static func send(_ command: ChargerCommand, psn: String, client: MCPClient) async throws -> String {
+        let id = ChargerID(storedKey: psn)
+        guard let driver = ChargerDrivers.driver(for: id) as? CandySignDriver else {
+            throw ChargerDriverError.unavailable
+        }
+        let session = driver.openSession(for: id, mcp: client, lanIP: nil)
+        do {
+            let text = try await session.perform(command)
+            await session.close()
+            return text
+        } catch {
+            await session.close()
+            throw error
+        }
     }
 
     private func showMessage(_ psn: String, _ text: String, isError: Bool) {
@@ -839,7 +899,9 @@ final class AppModel {
 
     // MARK: - 设备与钥匙串
 
-    func device(_ psn: String) -> DeviceConfig? { devices.first { $0.psn == psn } }
+    func device(_ psn: String) -> DeviceConfig? {
+        devices.first { $0.chargerID.matches(storedKey: psn) }
+    }
 
     /// 保存一条 MCP 地址到钥匙串；`expectedPSN` 不为空时要求 PSN 一致。
     /// `raw` 可以只是地址，也可以是小程序「龙虾服务」复制出来的整段文字。
@@ -855,9 +917,12 @@ final class AppModel {
     }
 
     func deleteMCP(psn: String) throws {
-        try keychain.delete(account: psn)
-        clients[psn] = nil
-        mcpConfigured.remove(psn)
+        let id = device(psn)?.chargerID ?? ChargerID(storedKey: psn)
+        try keychain.delete(charger: id)
+        for key in id.lookupKeys {
+            clients[key] = nil
+            mcpConfigured.remove(key)
+        }
     }
 
     /// 从文本里导入所有 MCP 地址。
@@ -885,9 +950,10 @@ final class AppModel {
     }
 
     /// 先删钥匙串里的 MCP 地址，删不掉就保留设备并报错，免得 token 留在钥匙串里却看不到。
-    func removeDevice(_ psn: String) throws {
+    func removeDevice(_ requested: String) throws {
+        let psn = canonical(requested)
         try deleteMCP(psn: psn)
-        devices.removeAll { $0.psn == psn }
+        devices.removeAll { $0.chargerID.matches(storedKey: psn) }
         runtime[psn] = nil
         history[psn] = nil
         historyDirty = true
@@ -899,13 +965,15 @@ final class AppModel {
         updateSummary()
     }
 
-    func rename(_ psn: String, to name: String) {
+    func rename(_ requested: String, to name: String) {
+        let psn = canonical(requested)
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         updateDevice(psn) { $0.name = trimmed }
     }
 
-    func setHost(_ psn: String, _ host: String) {
+    func setHost(_ requested: String, _ host: String) {
+        let psn = canonical(requested)
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         let override = trimmed.isEmpty ? nil : trimmed
         guard let current = device(psn), current.hostOverride != override else { return }
@@ -926,7 +994,7 @@ final class AppModel {
     }
 
     private func updateDevice(_ psn: String, _ change: (inout DeviceConfig) -> Void) {
-        guard let index = devices.firstIndex(where: { $0.psn == psn }) else { return }
+        guard let index = devices.firstIndex(where: { $0.chargerID.matches(storedKey: psn) }) else { return }
         change(&devices[index])
         persistDevices()
     }
@@ -939,7 +1007,9 @@ final class AppModel {
     }
 
     private func refreshMCPStatus() {
-        mcpConfigured = Set(devices.map(\.psn).filter { keychain.exists(account: $0) })
+        mcpConfigured = Set(devices.compactMap { device in
+            keychain.exists(charger: device.chargerID) ? device.psn : nil
+        })
     }
 
     // MARK: - 登录时启动

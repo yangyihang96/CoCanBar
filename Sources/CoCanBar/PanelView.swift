@@ -600,10 +600,10 @@ struct DeviceCard: View {
                     .help("芯片温度：\(temperature.label)")
                     .accessibilityLabel("芯片温度\(temperature.label)")
             }
-            if port.isPoweredOn != nil {
+            if device.capabilities.contains(.portPower), port.isPoweredOn != nil {
                 PortSwitch(isOn: port.isPoweredOn == true, enabled: canControl, name: name) { toggle(port) }
                     .help(switchHelp(port, name: name))
-            } else {
+            } else if device.capabilities.contains(.portPower) {
                 PowerButtons(enabled: canControl, name: name) { on in
                     Task { await model.setPort(psn: device.psn, index: port.id, on: on) }
                 }
@@ -830,30 +830,38 @@ struct ControlsMenu: View {
     private func showMenu() {
         guard let view = anchor.view else { return }
         let menu = ClosureMenu()
+        let capabilities = device.capabilities
         if configured {
-            menu.section("充电策略")
-            for strategy in ChargingStrategy.allCases {
-                // 选了先在卡片上确认，确认后才发送
-                menu.item(strategy.title, detail: strategy.detail, symbol: strategy.symbol,
-                          checked: lastStrategy == strategy) {
-                    onPickStrategy(strategy)
+            // 小电拼三项都有，菜单内容和顺序跟以前一样。缺能力的驱动不放对应的一组。
+            if capabilities.contains(.chargingStrategy) {
+                menu.section("充电策略")
+                for strategy in ChargingStrategy.allCases {
+                    // 选了先在卡片上确认，确认后才发送
+                    menu.item(strategy.title, detail: strategy.detail, symbol: strategy.symbol,
+                              checked: lastStrategy == strategy) {
+                        onPickStrategy(strategy)
+                    }
                 }
             }
-            menu.section("温控")
-            for mode in TemperatureMode.allCases {
-                menu.item(mode.displayName, detail: mode.detail, symbol: mode.symbol,
-                          checked: state.control.temperature == mode) {
-                    guard mode != state.control.temperature else { return }
-                    Task { await model.setTemperature(psn: device.psn, mode) }
+            if capabilities.contains(.temperatureMode) {
+                menu.section("温控")
+                for mode in TemperatureMode.allCases {
+                    menu.item(mode.displayName, detail: mode.detail, symbol: mode.symbol,
+                              checked: state.control.temperature == mode) {
+                        guard mode != state.control.temperature else { return }
+                        Task { await model.setTemperature(psn: device.psn, mode) }
+                    }
                 }
             }
-            menu.separator()
-            menu.submenu("屏幕亮度", detail: state.control.display.map { "当前 \($0.rawValue)" },
-                         symbol: "sun.max") { levels in
-                for level in DisplayLevel.allCases {
-                    levels.item(level.rawValue, checked: state.control.display == level) {
-                        guard level != state.control.display else { return }
-                        Task { await model.setDisplay(psn: device.psn, level) }
+            if capabilities.contains(.displaySettings) {
+                menu.separator()
+                menu.submenu("屏幕亮度", detail: state.control.display.map { "当前 \($0.rawValue)" },
+                             symbol: "sun.max") { levels in
+                    for level in DisplayLevel.allCases {
+                        levels.item(level.rawValue, checked: state.control.display == level) {
+                            guard level != state.control.display else { return }
+                            Task { await model.setDisplay(psn: device.psn, level) }
+                        }
                     }
                 }
             }
@@ -862,7 +870,9 @@ struct ControlsMenu: View {
                 showSettings()
             }
             menu.separator()
-            menu.note(lastStrategy == nil ? "MCP 读不到设备当前的策略" : "勾选的是本 app 上次设置的策略")
+            if capabilities.contains(.chargingStrategy) {
+                menu.note(lastStrategy == nil ? "MCP 读不到设备当前的策略" : "勾选的是本 app 上次设置的策略")
+            }
             if let error = state.control.loadError {
                 menu.note("读取温控和亮度失败：\(String(error.prefix(40)))")
             }

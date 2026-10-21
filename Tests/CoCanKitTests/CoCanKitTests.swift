@@ -14,7 +14,7 @@ final class CoCanKitTests: XCTestCase {
          "tasks":[{"name":"httpd","stack_watermark_bytes":3076,"cpu_percent":0.0006}],
          "wifi":{"ssid":"test","bssid":"00:00:00:00:00:00","channel":6,"rssi":-42}}
         """
-        let metrics = try JSONDecoder().decode(DeviceMetrics.self, from: Data(json.utf8))
+        let metrics = try CandySignDriver.decodeMetrics(Data(json.utf8))
         XCTAssertEqual(metrics.ports.count, 2)
         XCTAssertEqual(metrics.ports[1].watts, 6.670368, accuracy: 0.000001)
         XCTAssertEqual(metrics.totalWatts, 6.670368, accuracy: 0.000001)
@@ -159,7 +159,7 @@ final class CoCanKitTests: XCTestCase {
     }
 
     func testMissingFieldsUseDefaults() throws {
-        let metrics = try JSONDecoder().decode(DeviceMetrics.self, from: Data(#"{"ports":[{"id":2,"state":"INACTIVE"}]}"#.utf8))
+        let metrics = try CandySignDriver.decodeMetrics(Data(#"{"ports":[{"id":2,"state":"INACTIVE"}]}"#.utf8))
         let port = try XCTUnwrap(metrics.ports.first)
         XCTAssertEqual(port.fcProtocol, 255)
         XCTAssertEqual(port.isPoweredOn, false)

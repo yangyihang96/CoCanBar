@@ -52,6 +52,8 @@ struct DeviceControls: View {
     private var facts: MachineFacts { model.facts(device.psn) }
     private var lastStrategy: ChargingStrategy? { device.lastStrategy.flatMap(ChargingStrategy.init(rawValue:)) }
     private var every: String { String(format: "%g", model.pollInterval) }
+    /// 小电拼的驱动这些能力都有，卡片和以前一样都在。别的驱动缺哪项，对应的卡片就不画。
+    private var capabilities: ChargerCapabilities { device.capabilities }
 
     /// 右边一栏（端口、设备、临时功率分配、在充设备）的宽度。
     static let sideWidth: CGFloat = 340
@@ -66,7 +68,9 @@ struct DeviceControls: View {
                 // 每一排的卡片一样高：先按内容量出最高的一张，其余的拉到同样高
                 HStack(alignment: .top, spacing: 16) {
                     VStack(spacing: 16) {
-                        modeCard
+                        if capabilities.contains(.chargingStrategy) {
+                            modeCard
+                        }
                         powerCard
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -79,10 +83,16 @@ struct DeviceControls: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(alignment: .top, spacing: 16) {
-                    temperatureCard
-                    displayCard
-                    allocationCard
-                        .frame(width: Self.sideWidth)
+                    if capabilities.contains(.temperatureMode) {
+                        temperatureCard
+                    }
+                    if capabilities.contains(.displaySettings) {
+                        displayCard
+                    }
+                    if capabilities.contains(.powerAllocation) {
+                        allocationCard
+                            .frame(width: Self.sideWidth)
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 HStack(alignment: .top, spacing: 16) {
@@ -92,13 +102,15 @@ struct DeviceControls: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .settingsCard()
-                    VStack(alignment: .leading, spacing: 12) {
-                        CardTitle(title: "在充设备", detail: identityStatus)
-                        ConnectedDevices(device: device, ports: ports, configured: configured, online: online)
+                    if capabilities.contains(.portIdentity) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            CardTitle(title: "在充设备", detail: identityStatus)
+                            ConnectedDevices(device: device, ports: ports, configured: configured, online: online)
+                        }
+                        .frame(width: Self.sideWidth - 36, alignment: .topLeading)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .settingsCard()
                     }
-                    .frame(width: Self.sideWidth - 36, alignment: .topLeading)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .settingsCard()
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -290,22 +302,24 @@ struct DeviceControls: View {
                 .help("MCP 读不到设备当前的模式，橙色的是上次由本 app 设置的；在手机上改过也可以再点一次重新下发。"
                       + "小程序里的「苹果全家桶」「自定义」用的是静态分配表，MCP 不能设置。")
                 Spacer(minLength: 8)
-                Button {
-                    guard let mode = control.temperature else { return }
-                    Task { await model.setTemperature(psn: device.psn, mode == .powerFirst ? .temperatureFirst : .powerFirst) }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: control.temperature?.symbol ?? "thermometer.medium")
-                        Text(control.temperature?.displayName ?? "温控")
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.system(size: 9, weight: .bold))
+                if capabilities.contains(.temperatureMode) {
+                    Button {
+                        guard let mode = control.temperature else { return }
+                        Task { await model.setTemperature(psn: device.psn, mode == .powerFirst ? .temperatureFirst : .powerFirst) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: control.temperature?.symbol ?? "thermometer.medium")
+                            Text(control.temperature?.displayName ?? "温控")
+                            Image(systemName: "arrow.left.arrow.right")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(SettingsStyle.green)
                     }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(SettingsStyle.green)
+                    .buttonStyle(.plain)
+                    .help("点按切换性能温控 / 安心温控")
+                    .disabled(control.temperature == nil || !canSend)
                 }
-                .buttonStyle(.plain)
-                .help("点按切换性能温控 / 安心温控")
-                .disabled(control.temperature == nil || !canSend)
             }
         }
         .settingsCard()
@@ -465,7 +479,9 @@ struct DeviceControls: View {
     /// 开关状态读得到时是橙色开关；云端读不到的口给「打开」「关闭」两个按钮（没在供电，关掉不会断电，不再确认）。
     @ViewBuilder
     private func powerControl(_ port: PortMetrics, name: String) -> some View {
-        if let on = port.isPoweredOn {
+        if !capabilities.contains(.portPower) {
+            EmptyView()
+        } else if let on = port.isPoweredOn {
             OrangeToggle(isOn: Binding(get: { switching[port.id] ?? on }, set: { toggle(port, on: $0) }),
                          label: "\(name) 供电", scale: 0.9)
                 .disabled(!canSend || !online)

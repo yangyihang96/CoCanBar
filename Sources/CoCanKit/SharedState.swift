@@ -6,7 +6,8 @@ import notify
 //
 // 两边在同一个 App Group 容器里交换几个小文件：
 // - snapshot.json：app 读到数据后写的快照。小组件拿不到 MCP 令牌（令牌只在 app 的钥匙串里）；
-// - lan/<PSN>.json：app 没在运行时，小组件自己读局域网 `/metrics.json` 的结果（局域网接口不要令牌）；
+// - lan/<PSN>.json：app 没在运行时，小组件自己读局域网 `/metrics.json` 的结果（局域网接口不要令牌）。
+//   文件名仍是裸 PSN。用 `candysign:<PSN>` 来查时会落到同一个文件。只有 HTTP 驱动可以直读；
 // - commands/<id>.json：在小组件上点开关时写的命令，写完发一个 Darwin 通知叫醒 app；
 // - replies/<id>.json：app 收下命令后的回复。小组件最多等 3 秒，等不到就撤回命令，提示 app 没在运行；
 // - pending.json、notice.json：小组件自己用的「再点一次确认关闭」和提示文字。
@@ -54,7 +55,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
 
     public func device(_ psn: String?) -> Device? {
         guard let psn else { return devices.first }
-        return devices.first { $0.psn == psn }
+        return devices.first { ChargerID(storedKey: $0.psn).matches(storedKey: psn) }
     }
 
     /// 菜单栏 app 这时还在运行：没有正常退出，并且 1 分钟内写过快照。
@@ -329,7 +330,7 @@ public struct PendingConfirmation: Codable, Sendable, Equatable {
     }
 
     public func matches(psn: String, port: Int, now: Date = Date()) -> Bool {
-        self.psn == psn && self.port == port && now < expiresAt
+        ChargerID(storedKey: self.psn).matches(storedKey: psn) && self.port == port && now < expiresAt
     }
 }
 
@@ -352,7 +353,9 @@ public struct WidgetNotice: Codable, Sendable, Equatable {
     }
 
     public func applies(to psn: String, now: Date = Date()) -> Bool {
-        (self.psn == nil || self.psn == psn) && now < expiresAt
+        guard now < expiresAt else { return false }
+        guard let stored = self.psn else { return true }
+        return ChargerID(storedKey: stored).matches(storedKey: psn)
     }
 }
 
@@ -388,19 +391,20 @@ public struct SharedStore: Sendable {
     }
 
     /// 小组件：app 没在运行时自己读到的局域网数据，每台设备一个文件（几个小组件各读各的设备，互不覆盖）。
+    /// 小电拼的文件名仍是裸 PSN。`candysign:<PSN>` 写成、读成同一个文件。
     public func writeDirectReading(_ device: WidgetSnapshot.Device) throws {
-        guard let url = directFile(device.psn) else { return }
+        guard let url = directFile(ChargerID(storedKey: device.psn)) else { return }
         try write(device, to: url)
     }
 
     public func readDirectReading(_ psn: String) -> WidgetSnapshot.Device? {
-        directFile(psn).flatMap { read(WidgetSnapshot.Device.self, at: $0) }
+        directFile(ChargerID(storedKey: psn)).flatMap { read(WidgetSnapshot.Device.self, at: $0) }
     }
 
-    /// PSN 是数字和字母；别的字符不拼进路径。
-    private func directFile(_ psn: String) -> URL? {
-        guard !psn.isEmpty, psn.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else { return nil }
-        return directURL.appendingPathComponent("\(psn).json")
+    /// 文件名只用数字和字母。小电拼是裸 PSN；带冒号的前缀不进路径。
+    private func directFile(_ id: ChargerID) -> URL? {
+        guard let token = id.directReadingToken else { return nil }
+        return directURL.appendingPathComponent("\(token).json")
     }
 
     /// 小组件：写一条命令（之后发通知叫醒 app）。

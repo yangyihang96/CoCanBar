@@ -173,11 +173,12 @@ final class WidgetBridge {
                 appLog.notice("小组件的开关命令没有执行：\(problem, privacy: .public)")
                 continue
             }
-            guard let model else { continue }
-            accepted.insert(command.psn)
+            guard let model, let device = model.device(command.psn) else { continue }
+            let psn = device.psn
+            accepted.insert(psn)
             Task { [weak self] in
-                let error = await model.setPort(psn: command.psn, index: command.port, on: command.turnOn)
-                self?.accepted.remove(command.psn)
+                let error = await model.setPort(psn: psn, index: command.port, on: command.turnOn)
+                self?.accepted.remove(psn)
                 if let error {
                     appLog.notice("小组件的开关命令失败：\(error, privacy: .public)")
                 }

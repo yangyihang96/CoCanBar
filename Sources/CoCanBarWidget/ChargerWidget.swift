@@ -34,7 +34,7 @@ struct ChargerEntry: TimelineEntry {
     /// 名字、策略、能否控制仍以 app 最后写的为准。
     var device: WidgetSnapshot.Device? {
         guard let app = appDevice else { return nil }
-        guard !appRunning, let direct, direct.psn == app.psn,
+        guard !appRunning, let direct, ChargerID(storedKey: direct.psn).matches(storedKey: app.psn),
               (direct.readAt ?? .distantPast) > (app.readAt ?? .distantPast) else { return app }
         var device = direct
         device.name = app.name
@@ -63,7 +63,8 @@ struct ChargerEntry: TimelineEntry {
 
     /// 等第二次点击确认关闭的口。
     var pendingPort: Int? {
-        guard let device, let pending, pending.psn == device.psn, date < pending.expiresAt else { return nil }
+        guard let device, let pending, ChargerID(storedKey: pending.psn).matches(storedKey: device.psn),
+              date < pending.expiresAt else { return nil }
         return pending.port
     }
 
@@ -141,7 +142,13 @@ struct ChargerProvider: AppIntentTimelineProvider {
     /// 菜单栏 app 没在运行：自己读一次局域网（最多等 10 秒，不要令牌），读到了存起来，下次接着用。
     /// 小组件和 app 共用本地网络权限，app 允许过就能读。
     private func readDirectly(_ entry: inout ChargerEntry, from device: WidgetSnapshot.Device, host: String) async {
-        let psn = device.psn
+        let id = ChargerID(storedKey: device.psn)
+        // 只有 HTTP 驱动能在小组件里自己读。蓝牙驱动要连上再断开，不能在这里占着。
+        guard ChargerDrivers.driver(for: id)?.allowsDirectWidgetRead == true else {
+            entry.directFailed = true
+            return
+        }
+        let psn = id.localID
         let knownIP = device.lanIP
         do {
             let metrics = try await withDeadline(seconds: 10) {

@@ -16,7 +16,8 @@ public enum KeychainError: Error, LocalizedError, Sendable {
     }
 }
 
-/// 把每台设备的 MCP 地址（含 token）存在登录钥匙串的通用密码项里，account 用 PSN。
+/// 把每台设备的 MCP 地址（含 token）存在登录钥匙串的通用密码项里。
+/// 小电拼的 account 仍是裸 PSN。读取时按 `ChargerID.lookupKeys` 先试旧键，再试 `candysign:<PSN>`。
 public struct KeychainStore: Sendable {
     public static let defaultService = "com.local.CoCanBar.mcp"
     public let service: String
@@ -73,5 +74,25 @@ public struct KeychainStore: Sendable {
     public func delete(account: String) throws {
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.status(status) }
+    }
+
+    /// 先读存盘用的旧键（小电拼是裸 PSN），没有再读带驱动前缀的键。
+    public func read(charger id: ChargerID) throws -> String? {
+        for key in id.lookupKeys {
+            if let value = try read(account: key) { return value }
+        }
+        return nil
+    }
+
+    public func exists(charger id: ChargerID) -> Bool {
+        for key in id.lookupKeys where exists(account: key) { return true }
+        return false
+    }
+
+    /// 旧键和新键都删。不存在的项不算失败。
+    public func delete(charger id: ChargerID) throws {
+        for key in id.lookupKeys {
+            try delete(account: key)
+        }
     }
 }

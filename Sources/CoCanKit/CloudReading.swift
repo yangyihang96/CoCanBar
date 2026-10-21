@@ -8,39 +8,19 @@ import Foundation
 /// 所以只有接着设备、并且有输出电压的口能确定开着，其余的口开关状态未知（`PortMetrics.isPoweredOn` 为 nil）。
 public enum CloudReading {
     /// 每 15 秒读一次：充电曲线两点隔 30 秒以上就断开，这样曲线还能连着画。
-    public static let interval: TimeInterval = 15
+    public static let interval = CandySignDriver.cloudInterval
     /// 最近一次云端读数在这段时间内算在线。
-    public static let freshness: TimeInterval = 45
-    /// 输出电压到这么高才算确实在供电（USB PD 的 PPS 最低档是 3.3 V）。
-    static let poweredMillivolts = 3_000
+    public static let freshness = CandySignDriver.cloudFreshness
 
     /// 连续失败时拉长间隔：15、30、60 秒，设备断电或云端出问题时不一直问。
     public static func interval(afterFailures failures: Int) -> TimeInterval {
-        interval * Double(1 << min(max(failures, 0), 2))
+        CandySignDriver.cloudInterval(afterFailures: failures)
     }
 
     /// `get_port_details` 的结果换成和局域网一样的读数；一个口都没有时返回 nil。
+    /// 解码在 `CandySignDriver`，这里留着是原来的调用点。
     public static func metrics(from details: JSONValue?) -> DeviceMetrics? {
-        var ports: [PortMetrics] = []
-        for entry in details?["ports"]?.arrayValue ?? [] {
-            guard let number = entry["port"]?.looseInt, number >= 1,
-                  !ports.contains(where: { $0.id == number - 1 }) else { continue }
-            let attached = entry["connected"]?.boolValue ?? false
-            let millivolts = max(entry["vout_mv"]?.looseInt ?? 0, 0)
-            let powered = attached && millivolts >= poweredMillivolts
-            let text = entry["fc_protocol"]?.trimmedText
-            let code = text.flatMap { FastChargeProtocol.code(cloudName: $0) }
-            ports.append(PortMetrics(
-                id: number - 1, active: powered, state: "", portType: "", attached: attached,
-                chargingDurationSeconds: 0,
-                fcProtocol: code ?? (text == nil ? 255 : FastChargeProtocol.unrecognized),
-                currentMilliamps: max(entry["iout_ma"]?.looseInt ?? 0, 0), voltageMillivolts: millivolts,
-                inputMillivolts: max(entry["vin_mv"]?.looseInt ?? 0, 0), powerBudgetWatts: 0,
-                sessionID: entry["session_id"]?.looseInt, sessionCharge: nil,
-                powerKnown: powered, protocolText: code == nil ? text : nil))
-        }
-        guard !ports.isEmpty else { return nil }
-        return DeviceMetrics(ports: ports.sorted { $0.id < $1.id }, system: nil)
+        CandySignDriver.metrics(fromCloud: details)
     }
 }
 

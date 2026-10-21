@@ -36,7 +36,7 @@ public struct LANClient: Sendable {
     public func metrics(ip: String) async throws -> DeviceMetrics {
         let data = try await get(ip: ip, path: "/metrics.json")
         do {
-            return try JSONDecoder().decode(DeviceMetrics.self, from: data)
+            return try CandySignDriver.decodeMetrics(data)
         } catch {
             throw LANError.decoding(String(describing: error).prefix(160).description)
         }

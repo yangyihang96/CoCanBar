@@ -26,7 +26,9 @@ struct WidgetChargerQuery: EntityQuery {
 
     func entities(for identifiers: [String]) async throws -> [WidgetChargerEntity] {
         let devices = devices
-        return identifiers.compactMap { id in devices.first { $0.psn == id }.map(WidgetChargerEntity.init) }
+        return identifiers.compactMap { id in
+            devices.first { ChargerID(storedKey: $0.psn).matches(storedKey: id) }.map(WidgetChargerEntity.init)
+        }
     }
 
     func suggestedEntities() async throws -> [WidgetChargerEntity] {

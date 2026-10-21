@@ -1,9 +1,9 @@
 import Foundation
 
-/// `GET /metrics.json` 里单个端口的读数。
+/// 一个口的读数，和品牌无关。小电拼由 `CandySignDriver` 从 `metrics.json` 或云端填进来。
 ///
 /// 单位（2026-10-15 用两路数据核对过）：current 是 mA，voltage / vin_value 是 mV，power_budget 是 W。
-/// `session_charge` 不是 mWh，只用它的增量推算电量，见 `SessionEnergy`。
+/// 小电拼的 `session_charge` 不是 mWh，只用它的增量推算电量，见 `SessionEnergy`。别的驱动可以不填。
 public struct PortMetrics: Sendable, Equatable, Identifiable {
     /// 从 0 开始；MCP 的端口号是 id + 1。
     public let id: Int
@@ -63,55 +63,22 @@ public struct PortMetrics: Sendable, Equatable, Identifiable {
     public var usesPD: Bool { protocolText.map { $0.uppercased().hasPrefix("PD") } ?? (15...21).contains(fcProtocol) }
 }
 
-extension PortMetrics: Decodable {
-    enum CodingKeys: String, CodingKey {
-        case id, active, state, attached, current, voltage
-        case portType = "port_type"
-        case chargingDurationSeconds = "charging_duration_seconds"
-        case fcProtocol = "fc_protocol"
-        case vinValue = "vin_value"
-        case powerBudget = "power_budget"
-        case sessionID = "session_id"
-        case sessionCharge = "session_charge"
-    }
-
-    // 字段缺失时用默认值，固件升级加减字段不至于整份解析失败
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(Int.self, forKey: .id)
-        active = try c.decodeIfPresent(Bool.self, forKey: .active) ?? true
-        state = try c.decodeIfPresent(String.self, forKey: .state) ?? ""
-        portType = try c.decodeIfPresent(String.self, forKey: .portType) ?? ""
-        attached = try c.decodeIfPresent(Bool.self, forKey: .attached) ?? false
-        chargingDurationSeconds = try c.decodeIfPresent(Int.self, forKey: .chargingDurationSeconds) ?? 0
-        fcProtocol = try c.decodeIfPresent(Int.self, forKey: .fcProtocol) ?? 255
-        currentMilliamps = try c.decodeIfPresent(Int.self, forKey: .current) ?? 0
-        voltageMillivolts = try c.decodeIfPresent(Int.self, forKey: .voltage) ?? 0
-        inputMillivolts = try c.decodeIfPresent(Int.self, forKey: .vinValue) ?? 0
-        powerBudgetWatts = try c.decodeIfPresent(Int.self, forKey: .powerBudget) ?? 0
-        sessionID = try c.decodeIfPresent(Int.self, forKey: .sessionID)
-        sessionCharge = try c.decodeIfPresent(Int.self, forKey: .sessionCharge)
-        powerKnown = true
-        protocolText = nil
-    }
-}
-
-public struct SystemMetrics: Sendable, Equatable, Decodable {
+public struct SystemMetrics: Sendable, Equatable {
     public let appVersion: String?
     public let bootTimeSeconds: Int?
     public let resetReason: Int?
     public let freeHeap: Int?
 
-    enum CodingKeys: String, CodingKey {
-        case appVersion = "app_version"
-        case bootTimeSeconds = "boot_time_seconds"
-        case resetReason = "reset_reason"
-        case freeHeap = "free_heap"
+    public init(appVersion: String?, bootTimeSeconds: Int?, resetReason: Int?, freeHeap: Int?) {
+        self.appVersion = appVersion
+        self.bootTimeSeconds = bootTimeSeconds
+        self.resetReason = resetReason
+        self.freeHeap = freeHeap
     }
 }
 
-/// `GET /metrics.json` 的整体结构（只取需要的字段，Wi‑Fi 信息不读）。
-public struct DeviceMetrics: Sendable, Equatable, Decodable {
+/// 一台充电器的读数。小电拼的 `GET /metrics.json` 在 `CandySignDriver.decodeMetrics` 里解码。
+public struct DeviceMetrics: Sendable, Equatable {
     public let ports: [PortMetrics]
     public let system: SystemMetrics?
 

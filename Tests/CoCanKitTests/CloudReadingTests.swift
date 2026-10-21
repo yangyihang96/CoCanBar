@@ -136,7 +136,7 @@ final class CloudReadingTests: XCTestCase {
 
     func testLANReadingsAlwaysKnowPowerState() throws {
         let json = #"{"ports":[{"id":0,"active":true,"state":"INACTIVE","attached":false},{"id":1,"state":"ATTACHED","attached":true}]}"#
-        let metrics = try JSONDecoder().decode(DeviceMetrics.self, from: Data(json.utf8))
+        let metrics = try CandySignDriver.decodeMetrics(Data(json.utf8))
         XCTAssertEqual(metrics.ports[0].isPoweredOn, false)
         XCTAssertEqual(metrics.ports[1].isPoweredOn, true)
         XCTAssertNil(metrics.ports[1].protocolText)
