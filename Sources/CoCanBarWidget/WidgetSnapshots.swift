@@ -16,6 +16,11 @@ enum WidgetSnapshots {
 
     @MainActor
     static func render(arguments: [String]) {
+        // `--theme warm|cool`：画哪套配色（不写盘）
+        if let index = arguments.firstIndex(of: "--theme"), index + 1 < arguments.count,
+           let mode = ThemeMode(rawValue: arguments[index + 1]) {
+            Palette.apply(mode, persist: false)
+        }
         let output = URL(fileURLWithPath: arguments.count > 1 ? arguments[1] : "widget-snapshots", isDirectory: true)
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let now = Date()

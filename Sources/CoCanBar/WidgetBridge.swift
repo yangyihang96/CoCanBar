@@ -125,6 +125,12 @@ final class WidgetBridge {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
+    /// 配色改了：配色文件已经由 `Palette.apply` 写进容器，这里只请系统按新配色重画。
+    /// 不受上面那几个节流限制——用户刚点完开关，应该马上看到颜色变。
+    func themeChanged() {
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     /// 小组件上点了刷新：马上读一次（局域网读不到的设备改读云端），写出新快照并刷新小组件。连点时只读一次。
     private func refreshNow() async {
         guard let model, !refreshing else { return }

@@ -34,6 +34,8 @@ struct PanelView: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 12)
         }
+        // 换配色时整棵子树重建：`Palette` 是静态取值的，不重建会留着旧颜色
+        .id(model.theme)
         .frame(width: Self.width)
         .background { backdrop }
         .environment(\.panelVisible, visible)
@@ -140,6 +142,10 @@ struct PanelView: View {
             Menu {
                 Button("立即刷新") { Task { await model.refreshAll() } }
                     .keyboardShortcut("r")
+                // 配色一键切换：暖色（奶油底）⇄ 冷色（冷灰底）
+                Button(model.theme == .cool ? "换成暖色调" : "换成冷色调") {
+                    model.theme = model.theme == .cool ? .warm : .cool
+                }
                 Button("设置…", action: showSettings)
                     .keyboardShortcut(",")
                 Divider()
@@ -193,17 +199,26 @@ struct BrandMark: View {
     let popCount: Int
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// app 包里的图标；调试构建没有 app 包，就读项目里的图标文件。都读不到时画一个矢量闪电。
-    @MainActor private static let icon: NSImage? = {
-        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") { return NSImage(contentsOf: url) }
+    /// app 包里的图标；调试构建没有 app 包，就读项目 Support 里的图标文件。
+    /// 暖色是橙红渐变那版，冷色是同形状的蓝色渐变版（都由 scripts/make-app-icon.swift 生成）。
+    @MainActor private static func loadIcon(_ name: String) -> NSImage? {
+        if let url = Bundle.main.url(forResource: name, withExtension: "icns") { return NSImage(contentsOf: url) }
         #if DEBUG
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../Support/AppIcon.icns").standardizedFileURL
+            .appendingPathComponent("../../Support/\(name).icns").standardizedFileURL
         return NSImage(contentsOf: url)
         #else
         return nil
         #endif
-    }()
+    }
+
+    @MainActor private static let warmIcon = loadIcon("AppIcon")
+    @MainActor private static let coolIcon = loadIcon("AppIconCool")
+
+    /// 当前配色对应的图标。两版都读不到时 `mark` 会画一个矢量替身。
+    private var icon: NSImage? {
+        Palette.mode == .cool ? Self.coolIcon : Self.warmIcon
+    }
 
     var body: some View {
         mark
@@ -222,7 +237,7 @@ struct BrandMark: View {
 
     @ViewBuilder
     private var mark: some View {
-        if let icon = Self.icon {
+        if let icon {
             // 图标四周有约 10% 的透明边（含自带的投影），放大到 37pt，主体正好 30pt
             Image(nsImage: icon)
                 .resizable()
@@ -234,9 +249,9 @@ struct BrandMark: View {
                 .fill(LinearGradient(colors: [Palette.brandLight, Palette.brand], startPoint: .top, endPoint: .bottom))
                 .frame(width: 30, height: 30)
                 .overlay {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
+                    CandyMarkShape()
+                        .fill(.white)
+                        .frame(width: 20, height: 20 / CandyMark.aspectRatio)
                 }
                 .shadow(color: Palette.brand.opacity(0.35), radius: 3, y: 1)
         }

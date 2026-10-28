@@ -64,7 +64,15 @@
 设置窗口的排版和配色照 [KangCharge](https://github.com/LeiZiKang/KangCharge)（MIT）的主窗口：奶油底、白卡片、一个橙色强调色，代码是另写的。
 都跟随系统深浅色；KangCharge 只有浅色，深色外观换成同一色调的暖深灰。
 
-- **菜单栏**：闪电加所有在线设备的总功率。图标宽度固定，读数变化时不会左右挪。
+配色有两套，面板、设置窗口和桌面小组件一起换，选择记在 App Group 容器的 `theme.txt` 里：
+
+- **暖色**（默认）：奶油底 `#F8F5EC`、橙红强调 `#FF4719`，端口色是橙系；
+- **冷色**：冷灰底 `#F0F4F9`、蓝色强调 `#2F7BF6`，端口色是从浅青到深蓝的渐变。
+
+切换：面板右上角齿轮里的「换成冷色调 / 换成暖色调」，或者设置「通用 → 外观」里的「冷色调」开关。
+芯片温度的圆点、在线/离线这类状态色只跟着底色微调明暗，色相不变（温度必须是绿-黄-红，不能跟着强调色变蓝）。
+
+- **菜单栏**：糖标加所有在线设备的总功率（界面上不带单位，读屏时补「瓦」）。图标宽度固定，读数变化时不会左右挪。
 - **面板**：
   - 顶部显示在线台数和在充口数，有多台时显示合计功率。
   - 每台设备一张卡片。名称和在线状态在卡片上方；卡片里是总功率、「调节」按钮、充电图谱和详情条。
@@ -91,7 +99,7 @@
     - 充电曲线：一个口或各口合计的功率，最近 30 分钟或 2 小时；
     - 在充设备：每个口接的设备、电量和电池健康、PD 档位、线材、本次已充和芯片温度。
   - 设备：名称、PSN、主机、MCP 地址（存钥匙串），以及测试连接、扫描局域网、删除设备。
-  - 通用：刷新间隔、登录时启动。
+  - 通用：外观（暖色 / 冷色调切换）、刷新间隔、登录时启动。
 
 ## 能调的项目
 
@@ -260,6 +268,8 @@ Mac 不在家、或者小电拼换了网络时，局域网读不到。配好 MCP
   - 没有证书时退回临时签名：app 能用，但小组件读不到数据。
 - 脚本检查 app 和小组件的版本号是否一致。改版本时，`Support/Info.plist` 和 `Support/Widget-Info.plist` 要一起改。
 - 打包后注销并删掉 Xcode 的中间产物，免得同一个 bundle id 登记两份，快捷指令和小组件找到没签名的那份。
+- 只在本机用、不需要 Intel 那一半架构时，可以用 `./scripts/build-app-local.sh`：和 `build-app.sh` 一样，只是只编 arm64。
+  有的机器上通用构建会撞上 Swift 宏插件的报错，这个脚本绕开它，产物功能一样，只是不含 x86_64。
 
 开发、单元测试和离屏截图用 SwiftPM：
 
@@ -272,11 +282,17 @@ swift run CoCanBarWidget <目录>
 - 最后一条用演示数据画出小组件三种尺寸在浅色、深色下的样子，以及待确认关闭、已发送、app 没运行、app 没开时小组件直读、直读失败、app 刚退出、没配 MCP、离线、读数过时、没有数据等状态。
 - SwiftPM 的调试构建没有 App Group，也没有快捷指令元数据：小组件共享和快捷指令不工作，其他功能照常。
 
-图标的原画由 ChatGPT（Codex 图像生成）按项目配色生成，三个方案在 `Support/图标方案/`。换原画后重新生成图标：
+图标由官网糖标（`Sources/CoCanBar/CandyMark.swift`）画出：暖色那版是橙红渐变，冷色那版是蓝色渐变，面板左上角按当前配色取其中一版，Finder 里始终用暖色那版。
+改圆角、留边或颜色后重新生成：
 
 ```bash
-xcrun swift scripts/make-icon.swift Support/AppIcon-source.png Support/AppIcon.icns
+mkdir -p /tmp/icongen && cp Sources/CoCanBar/CandyMark.swift /tmp/icongen/ \
+  && cp scripts/make-app-icon.swift /tmp/icongen/main.swift \
+  && swiftc -O /tmp/icongen/CandyMark.swift /tmp/icongen/main.swift -o /tmp/icongen/gen \
+  && /tmp/icongen/gen
 ```
+
+`Support/图标方案/` 里是早期的三张原画（充电器本体、极简闪电、糖果闪电），留作参考；旧图标在 git 历史里。
 
 ## 首次配置
 
@@ -365,6 +381,7 @@ swift build
 ```
 
 - `--snapshot <目录>`：离屏渲染每个场景的面板，各出浅色、深色两张 PNG，然后退出。
+- `--theme warm|cool`：这次运行用哪套配色（不写盘，不影响记住的选择），可以和其他调试参数一起用。
 - `--demo <场景号>`：用演示数据跑真实的面板。场景号：
   1. 正常；
   2. 选中与切换策略；
@@ -431,7 +448,7 @@ Sources/cocan-probe/     命令行自检
 Tests/CoCanKitTests/     解析、校验、共享数据、小组件直读和曲线存盘的单元测试
 Support/                 app 和小组件的 Info.plist（LSUIElement、本地网络权限说明、ATS 本地网络例外）、图标
 CoCanBar.xcodeproj/      打包用的 Xcode 工程（小组件扩展和快捷指令元数据只能由它生成）
-scripts/                 打包签名（build-app.sh）、生成图标（make-icon.swift）
+scripts/                 打包签名（build-app.sh）、生成图标（make-app-icon.swift）
 docs/screenshots/        README 里的截图（演示数据）
 .github/workflows/       CI：每次推送用 SwiftPM 构建并跑单元测试
 ```

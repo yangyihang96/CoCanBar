@@ -13,6 +13,7 @@ enum PanelSnapshots {
     static func runIfRequested() -> Bool {
         let arguments = CommandLine.arguments
         guard let index = arguments.firstIndex(of: "--snapshot"), index + 1 < arguments.count else { return false }
+        applyThemeArgument()
         let directory = URL(fileURLWithPath: (arguments[index + 1] as NSString).expandingTildeInPath, isDirectory: true)
         _ = NSApplication.shared
         do {
@@ -30,10 +31,19 @@ enum PanelSnapshots {
         return true
     }
 
+    /// 调试参数 `--theme warm|cool`：这次运行用哪套配色。不写盘，免得改掉用户选的那套。
+    static func applyThemeArgument() {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--theme"), index + 1 < arguments.count,
+              let mode = ThemeMode(rawValue: arguments[index + 1]) else { return }
+        Palette.apply(mode, persist: false)
+    }
+
     /// `--demo <场景号>`：返回该场景的演示数据模型（不轮询、不读钥匙串、不发请求）。
     static func demoModelIfRequested() -> AppModel? {
         let arguments = CommandLine.arguments
         guard let index = arguments.firstIndex(of: "--demo") else { return nil }
+        applyThemeArgument()
         let all = scenarios()
         let number = index + 1 < arguments.count ? Int(arguments[index + 1]) ?? 1 : 1
         let scenario = all[min(max(number, 1), all.count) - 1]

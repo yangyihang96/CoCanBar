@@ -69,25 +69,27 @@ final class VisibilityProbeView: NSView {
     }
 }
 
-/// 菜单栏标签画成一张固定宽度的模板图：闪电加等宽数字的总功率。
+/// 菜单栏标签画成一张固定宽度的模板图：制糖工厂那颗糖加等宽数字的总功率。
 /// 宽度只按几种最宽的写法算，和当前读数无关，读数变化时菜单栏图标不会左右挪；模板图由系统按深浅色着色。
 enum MenuBarIcon {
     /// `AppModel.format(watts:)` 可能给出的最宽写法（等宽数字下 8 和其他数字一样宽）。
-    static let widthSamples = ["88.8 W", "888 W", "8.8 kW", "—"]
+    static let widthSamples = ["88.8", "999", "1.2k", "—"]
 
     static func image(title: String, online: Bool) -> NSImage {
         let fontSize = NSFont.menuBarFont(ofSize: 0).pointSize
         let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .regular)
         let textWidth = ceil(widthSamples.map { Self.textWidth($0, font: font) }.max() ?? 0)
-        let symbolSize = symbol(online: online, pointSize: fontSize)?.size ?? NSSize(width: 10, height: fontSize)
+        let candy = candySize(fontSize: fontSize)
         let lineHeight = ceil(font.ascender - font.descender)
-        let size = NSSize(width: ceil(symbolSize.width) + 3 + textWidth, height: max(lineHeight, ceil(symbolSize.height)))
+        let size = NSSize(width: candy.width + 3 + textWidth, height: max(lineHeight, candy.height))
         // 没有数字（离线时的“—”）就居中，有数字就右对齐
         let centered = !title.contains(where: \.isNumber)
         let image = NSImage(size: size, flipped: false) { rect in
-            if let symbol = symbol(online: online, pointSize: fontSize) {
-                let s = symbol.size
-                symbol.draw(in: NSRect(x: 0, y: ((rect.height - s.height) / 2).rounded(), width: s.width, height: s.height))
+            if let context = NSGraphicsContext.current?.cgContext {
+                CandyMark.draw(in: context,
+                               rect: NSRect(x: 0, y: ((rect.height - candy.height) / 2).rounded(),
+                                            width: candy.width, height: candy.height),
+                               filled: online)
             }
             let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .regular)
             let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.black]
@@ -98,14 +100,15 @@ enum MenuBarIcon {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = "小电拼 \(title)"
+        // 界面上省掉单位，读屏时补回来
+        image.accessibilityDescription = online ? "小电拼 \(title) 瓦" : "小电拼 未连接"
         return image
     }
 
-    private static func symbol(online: Bool, pointSize: CGFloat) -> NSImage? {
-        // bolt 和 bolt.fill 轮廓尺寸相同，在线状态变化时宽度不变
-        NSImage(systemSymbolName: online ? "bolt.fill" : "bolt", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .regular))
+    /// 菜单栏里那颗糖占的尺寸：高跟字高差不多，宽按标志的固定比例，在线离线一样大。
+    private static func candySize(fontSize: CGFloat) -> NSSize {
+        let height = (fontSize * 0.85).rounded()
+        return NSSize(width: (height * CandyMark.aspectRatio).rounded(), height: height)
     }
 
     private static func textWidth(_ text: String, font: NSFont) -> CGFloat {

@@ -15,6 +15,6 @@ let package = Package(
         .executableTarget(name: "CoCanBarWidget", dependencies: ["CoCanKit", "CoCanStyle"]),
         // 命令行自检工具：不开界面验证局域网读数和 MCP 只读调用
         .executableTarget(name: "cocan-probe", dependencies: ["CoCanKit"]),
-        .testTarget(name: "CoCanKitTests", dependencies: ["CoCanKit"]),
+        .testTarget(name: "CoCanKitTests", dependencies: ["CoCanKit", "CoCanStyle"]),
     ]
 )

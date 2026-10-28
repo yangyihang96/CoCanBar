@@ -8,6 +8,8 @@ struct CoCanBarApp: App {
 
     init() {
         #if DEBUG
+        // 调试用：`--theme warm|cool` 指定这次用哪套配色（不写盘）
+        PanelSnapshots.applyThemeArgument()
         // 调试用：`CoCanBar --snapshot <目录>` 离屏渲染面板截图后退出；
         // `CoCanBar --demo <场景号> [--demo-window]` 用演示数据跑真实的面板（可另开一个普通窗口显示）；
         // `CoCanBar --live-window` 用真实设备的数据把面板放进普通窗口
@@ -41,7 +43,7 @@ struct CoCanBarApp: App {
     }
 }
 
-/// 菜单栏上的闪电和总功率，画成固定宽度的模板图（见 `MenuBarIcon`）。
+/// 菜单栏上的那颗糖和总功率，画成固定宽度的模板图（见 `MenuBarIcon`）。
 struct MenuBarLabel: View {
     let model: AppModel
 

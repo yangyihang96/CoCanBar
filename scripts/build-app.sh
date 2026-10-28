@@ -25,8 +25,9 @@ ditto "$PRODUCT" "$APP"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 "$LSREGISTER" -u "$PRODUCT" 2>/dev/null || true
 rm -rf "$PRODUCT"
-# 图标由 scripts/make-icon.swift 从 Support/AppIcon-source.png 生成
+# 图标由 scripts/make-app-icon.swift 生成：暖色那版给 Finder，冷色那版给冷色主题的面板头部
 cp "$ROOT/Support/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$ROOT/Support/AppIconCool.icns" "$APP/Contents/Resources/AppIconCool.icns"
 plutil -lint "$APP/Contents/Info.plist" "$WIDGET/Contents/Info.plist" >/dev/null
 for metadata in "$APP/Contents/Resources/Metadata.appintents" "$WIDGET/Contents/Resources/Metadata.appintents"; do
   [[ -f "$metadata/extract.actionsdata" ]] || { echo "缺少快捷指令元数据：$metadata" >&2; exit 1; }

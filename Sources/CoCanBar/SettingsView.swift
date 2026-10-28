@@ -21,6 +21,8 @@ struct SettingsView: View {
         }
         // 三页一样大，切换时窗口不跳；「调节」页是两栏卡片，另外两页的表单放在中间
         .frame(width: 1080, height: 720)
+        // 换配色时整棵子树重建：`Palette` 是静态取值的，不重建会留着旧颜色
+        .id(model.theme)
     }
 }
 
@@ -293,6 +295,20 @@ struct GeneralSettings: View {
 
     var body: some View {
         FormPage(title: "通用") {
+            VStack(alignment: .leading, spacing: 14) {
+                CardTitle(title: "外观", detail: model.theme.title)
+                OptionLine(title: "冷色调") {
+                    OrangeToggle(isOn: Binding(get: { model.theme == .cool },
+                                               set: { model.theme = $0 ? .cool : .warm }),
+                                 label: "冷色调")
+                }
+                Text("打开：冷灰底 + 蓝色强调。关掉：奶油底 + 橙红强调（原来的样子）。菜单栏面板、设置页和桌面小组件一起换，选择会记住；面板右上角的齿轮菜单里也能一键切。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(SettingsStyle.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .settingsCard(padding: 20)
             VStack(alignment: .leading, spacing: 14) {
                 CardTitle(title: "运行")
                 OptionLine(title: "刷新间隔") {

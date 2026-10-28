@@ -105,7 +105,8 @@ private struct PortChip: View {
     }
 }
 
-/// 画的小电拼：奶油色机身，左上一块小屏显示总功率，下面一排口（A 口宽一点）。
+/// 画的小电拼：机身和产品一样是浅色，左上一块小屏显示总功率，下面一排口（A 口宽一点）。
+/// 机身颜色跟着配色走（暖色是奶油白，冷色是冷白）。
 private struct ChargerDrawing: View {
     /// 各口在机身上的位置（相对机身左上角）。
     let slots: [CGRect]
@@ -116,9 +117,11 @@ private struct ChargerDrawing: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0xFFFDF7), Color(hex: 0xEEE7D8)], startPoint: .top, endPoint: .bottom))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color(hex: 0xDCD3C1), lineWidth: 1))
-                .shadow(color: Color(hex: 0x7A5A2A).opacity(0.16), radius: 14, y: 9)
+                .fill(LinearGradient(colors: [Palette.deviceTop, Palette.deviceBottom],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Palette.deviceEdge, lineWidth: 1))
+                .shadow(color: Palette.deviceShadow.opacity(0.16), radius: 14, y: 9)
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color(hex: 0x121212))
                 .frame(width: 58, height: 25)

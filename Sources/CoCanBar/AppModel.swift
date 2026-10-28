@@ -137,6 +137,17 @@ final class AppModel {
         }
     }
 
+    /// 配色：暖色 / 冷色。改动后写进 App Group 容器，并让桌面小组件按新配色重画一次。
+    /// 面板和设置页靠 `.id(model.theme)` 重建整棵视图，`Palette` 的静态颜色才会重新取。
+    var theme: ThemeMode = Palette.mode {
+        didSet {
+            guard theme != oldValue else { return }
+            Palette.apply(theme)
+            widgets?.themeChanged()
+            appLog.debug("配色切换为 \(self.theme.rawValue, privacy: .public)")
+        }
+    }
+
     @ObservationIgnored private let lan = LANClient()
     @ObservationIgnored private let keychain = KeychainStore()
     @ObservationIgnored private var clients: [String: MCPClient] = [:]
@@ -386,10 +397,10 @@ final class AppModel {
         widgets?.setNeedsUpdate()
     }
 
-    /// 菜单栏读数：和面板同一套舍入（99.95 起不带小数），上千瓦换成 kW。
+    /// 菜单栏读数：只留数字，不写单位（糖标本身已经说明是电）。和面板同一套舍入（99.95 起不带小数），上千瓦换成 k。
     /// 只会出现 `MenuBarIcon.widthSamples` 里那几种写法，图标宽度不变。
     static func format(watts: Double) -> String {
-        watts >= 999.5 ? String(format: "%.1f kW", watts / 1000) : PanelFormat.watts(watts) + " W"
+        watts >= 999.5 ? String(format: "%.1fk", watts / 1000) : PanelFormat.watts(watts)
     }
 
     // MARK: - MCP 控制

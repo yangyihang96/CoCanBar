@@ -107,12 +107,15 @@ struct ChargerProvider: AppIntentTimelineProvider {
     }
 
     func snapshot(for configuration: SelectChargerIntent, in context: Context) async -> ChargerEntry {
+        // 配色是 app 改的，小组件在另一个进程里：每次生成内容前重新读一次
+        Palette.reload()
         let entry = current(configuration)
         // 小组件库里预览时还没有数据，就用演示数据
         return context.isPreview && entry.device == nil ? .preview(date: Date()) : entry
     }
 
     func timeline(for configuration: SelectChargerIntent, in context: Context) async -> Timeline<ChargerEntry> {
+        Palette.reload()
         let now = Date()
         var entry = current(configuration, now: now)
         if !entry.appRunning, let device = entry.device, let host = device.host {

@@ -3,29 +3,28 @@ import CoCanKit
 import CoCanStyle
 
 /// 设置窗口的配色，照 KangCharge（github.com/LeiZiKang/KangCharge，MIT）的主窗口：
-/// 奶油底、白卡片、一个橙色强调色、近黑的正文；选中的胶囊、开关和充电中的功率是橙色，在线是绿色。
-/// KangCharge 只有浅色，深色外观换成同一色调的暖深灰（和菜单栏面板一样）。
-/// 菜单栏面板和桌面小组件仍然照小程序的配色（`Palette`）。
+/// 奶油底、白卡片、一个强调色、近黑的正文；选中的胶囊、开关和充电中的功率是强调色，在线是绿色。
+/// 颜色全部取自 `Palette`，所以和菜单栏面板、桌面小组件一起跟着「暖色 / 冷色」切换。
 enum SettingsStyle {
-    static let orange = Color(hex: 0xFF4600)
-    static let green = Color(hex: 0x00AD38)
-    static let amber = Color(hex: 0xFFA51E)
-    static let red = Color(hex: 0xE64340)
+    static var orange: Color { Palette.brand }
+    static var green: Color { Palette.online }
+    static var amber: Color { Palette.heatModerate }
+    static var red: Color { Palette.danger }
 
-    static let cream = Adaptive(light: Color(hex: 0xF8F5EC), dark: Color(hex: 0x1C1B19))
-    static let card = Adaptive(light: .white, dark: Color(hex: 0x292724))
-    static let ink = Adaptive(light: Color(hex: 0x121212), dark: Color(hex: 0xF3F0EA))
-    static let gray = Adaptive(light: Color(hex: 0x808080), dark: Color(hex: 0x9C978E))
-    static let lightGray = Adaptive(light: Color(hex: 0xCCCCCC), dark: Color(hex: 0x5C5852))
-    static let line = Adaptive(light: Color(hex: 0xE8E8E8), dark: .white.opacity(0.08))
-    /// 橙色的浅底：端口标签、选中的温控项。
-    static let orangeSoft = Adaptive(light: Color(hex: 0xFF4600).opacity(0.1), dark: Color(hex: 0xFF4600).opacity(0.2))
+    static var cream: Adaptive { Palette.canvas }
+    static var card: Adaptive { Palette.card }
+    static var ink: Adaptive { Palette.ink }
+    static var gray: Adaptive { Palette.current.gray }
+    static var lightGray: Adaptive { Palette.current.lightGray }
+    static var line: Adaptive { Palette.current.line }
+    /// 强调色的浅底：端口标签、选中的温控项。
+    static var orangeSoft: Adaptive { Palette.current.accentSoft }
     /// 没选中的胶囊按钮的细边。
-    static let pillStroke = Adaptive(light: Color(hex: 0xE1E1E1), dark: .white.opacity(0.16))
+    static var pillStroke: Adaptive { Palette.pillStroke }
     /// 关着的开关。
-    static let toggleOff = Adaptive(light: Color(hex: 0xDEDBD4), dark: Color(hex: 0x4A4640))
+    static var toggleOff: Adaptive { Palette.current.toggleOff }
     /// 关着的端口标签。
-    static let tagOff = Adaptive(light: Color(hex: 0xF0F0F0), dark: .white.opacity(0.08))
+    static var tagOff: Adaptive { Palette.current.tagOff }
 
     /// 芯片温度：凉爽绿、温和琥珀、偏热和过热红，不认识的档位灰。
     static func temperature(_ temperature: PortTemperature) -> AnyShapeStyle {
